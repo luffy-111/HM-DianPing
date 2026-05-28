@@ -2,6 +2,7 @@ package com.hmdp.service.impl;
 
 import cn.hutool.core.util.RandomUtil;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.hmdp.dto.LoginFormDTO;
 import com.hmdp.dto.Result;
 import com.hmdp.entity.User;
 import com.hmdp.mapper.UserMapper;
@@ -11,6 +12,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import javax.servlet.http.HttpSession;
+
+import static com.hmdp.utils.SystemConstants.USER_NICK_NAME_PREFIX;
 
 /**
  * <p>
@@ -47,5 +50,54 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         log.debug("发送验证码成功，验证码为：{}", code);
 
         return Result.ok();
+    }
+
+    /**
+     * 登录功能
+     *
+     * @param loginForm 登录参数，包含手机号、验证码；或者手机号、密码
+     */
+    @Override
+    public Result login(LoginFormDTO loginForm, HttpSession session) {
+        // 1. 校验手机号
+        String phone = loginForm.getPhone();
+        if (RegexUtils.isPhoneInvalid(phone)) {
+            // 2. 如果手机号不符合，返回错误信息
+            return Result.fail("手机号格式错误！");
+        }
+        // 3. 校验验证码
+        String cacheCode = (String) session.getAttribute("code");
+        String code = loginForm.getCode();
+        if (cacheCode == null || !cacheCode.equals(code)) {
+            // 4. 不一致，返回错误信息
+            return Result.fail("验证码错误！");
+        }
+        // 5. 根据手机号查询用户
+        User user = query().eq("phone", phone).one();
+        if (user == null) {
+            // 6. 不存在，创建新用户并保存
+            user = createUserByPhone(phone);
+        }
+        // 7. 保存用户信息到session
+        session.setAttribute("user", user);
+
+        // 8. 返回登录结果
+        return Result.ok();
+    }
+
+    /**
+     * 根据手机号创建用户
+     *
+     * @param phone 手机号
+     * @return 新用户
+     */
+    private User createUserByPhone(String phone) {
+        //1. 创建用户
+        User user = new User();
+        user.setPhone(phone);
+        user.setNickName(USER_NICK_NAME_PREFIX + RandomUtil.randomString(10));
+        //2. 保存用户
+        save(user);
+        return user;
     }
 }
