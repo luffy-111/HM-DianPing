@@ -9,6 +9,7 @@ import com.hmdp.entity.Shop;
 import com.hmdp.mapper.ShopMapper;
 import com.hmdp.service.IShopService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.hmdp.utils.CacheClient;
 import com.hmdp.utils.RedisConstants;
 import com.hmdp.utils.RedisData;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -35,19 +36,41 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
     @Resource
     private StringRedisTemplate stringRedisTemplate;
 
+    @Resource
+    private CacheClient cacheClient;
+
     @Override
     public Result queryById(Long id) {
+        // 解决缓存穿透
+        /*Shop shop = cacheClient.queryWithCachePenetration(
+                RedisConstants.CACHE_SHOP_KEY,
+                id,
+                Shop.class,
+                this::getById,
+                RedisConstants.CACHE_SHOP_TTL,
+                TimeUnit.MINUTES);*/
+
         // 缓存穿透
         // Shop shop = queryWithCachePenetration(id);
 
         // 缓存击穿(用互斥锁)
         //Shop shop = queryWithMutex(id);
-        //if (shop == null) {
-        //    return Result.fail("店铺不存在");
-        //}
 
         // 缓存击穿(用逻辑过期)
-        Shop shop = queryWithLogicalExpire(id);
+        // Shop shop = queryWithLogicalExpire(id);
+
+        // 用逻辑过期解决缓存击穿
+        Shop shop = cacheClient.queryWithLogicalExpire(
+                RedisConstants.CACHE_SHOP_KEY,
+                id,
+                Shop.class,
+                this::getById,
+                RedisConstants.CACHE_SHOP_TTL,
+                TimeUnit.MINUTES);
+
+        if (shop == null) {
+            return Result.fail("店铺不存在");
+        }
         // 6. 返回
         return Result.ok(shop);
     }
@@ -58,7 +81,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
      * @param id
      * @return
      */
-    public Shop queryWithMutex(Long id) {
+    /*public Shop queryWithMutex(Long id) {
         String key = RedisConstants.CACHE_SHOP_KEY + id;
         // 1. 从redis中查询
         String shopJson = stringRedisTemplate.opsForValue().get(key);
@@ -103,10 +126,10 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         }
         // 7. 返回
         return shop;
-    }
+    }*/
 
     // 创建线程池
-    private static final ExecutorService CACHE_REBUILD_EXECUTOR = Executors.newFixedThreadPool(10);
+    // private static final ExecutorService CACHE_REBUILD_EXECUTOR = Executors.newFixedThreadPool(10);
 
     /**
      * 逻辑过期解决缓存击穿
@@ -114,7 +137,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
      * @param id
      * @return
      */
-    public Shop queryWithLogicalExpire(Long id) {
+    /*public Shop queryWithLogicalExpire(Long id) {
         String key = RedisConstants.CACHE_SHOP_KEY + id;
         // 1. 从redis中查询
         String shopJson = stringRedisTemplate.opsForValue().get(key);
@@ -161,7 +184,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         }
         // 6.6 获取锁失败, 返回原始数据
         return shop;
-    }
+    }*/
 
     /**
      * 缓存重建
@@ -186,7 +209,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
      * @param id
      * @return
      */
-    public Shop queryWithCachePenetration(Long id) {
+   /*public Shop queryWithCachePenetration(Long id) {
         String key = RedisConstants.CACHE_SHOP_KEY + id;
         // 1. 从redis中查询
         String shopJson = stringRedisTemplate.opsForValue().get(key);
@@ -212,27 +235,25 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         stringRedisTemplate.opsForValue().set(key, JSONUtil.toJsonStr(shop), RedisConstants.CACHE_SHOP_TTL, TimeUnit.MINUTES);
         return shop;
     }
-
+*/
     /**
      * 尝试获取锁
      *
      * @param key
      * @return
      */
-    private boolean tryLock(String key) {
+    /*private boolean tryLock(String key) {
         Boolean flag = stringRedisTemplate.opsForValue().setIfAbsent(key, "1", RedisConstants.LOCK_SHOP_TTL, TimeUnit.SECONDS);
         return BooleanUtil.isTrue(flag);
-    }
+    }*/
 
     /**
      * 释放锁
      *
-     * @param key
      */
-    private void unLock(String key) {
+    /*private void unLock(String key) {
         stringRedisTemplate.delete(key);
-    }
-
+    }*/
     @Override
     @Transactional
     public Result update(Shop shop) {
